@@ -1,0 +1,37 @@
+# =============================================================================
+# OCI server example — copy to config.properties after git clone
+#   cp config.properties.example config.properties
+# Keep DOCX outside git under /mmoneyhome/mobiquity/fsd-data/
+# =============================================================================
+
+fsd.dir=/mmoneyhome/mobiquity/fsd-data/fsds/FSD
+normalized.dir=/mmoneyhome/mobiquity/fsd-data/normalized
+ingest.dir=/mmoneyhome/mobiquity/fsd-data/normalized
+fsd.exclude.dirs=
+
+index.dir=/mmoneyhome/mobiquity/fsd-data/index
+output.dir=/mmoneyhome/mobiquity/fsd-data/output
+app.db=/mmoneyhome/mobiquity/fsd-data/app.db
+
+# Stage switches (Y/N). Scripts still run manually; N = exit immediately.
+normalize.enabled=Y
+ingest.enabled=Y
+
+embedding.model=nomic-embed-text
+ollama.base.url=http://127.0.0.1:11434
+
+# Model Y
+ollama.model=qwen2.5:1.5b
+ollama.timeout.seconds=300
+
+# Model X
+normalize.model=qwen2.5:7b
+normalize.timeout.seconds=600
+normalize.window.chars=2800
+normalize.window.overlap=200
+
+chunk.size=1200
+chunk.overlap=150
+retrieve.top.k=6
+chroma.collection=fsd_chunks
+generate.out.prefix=fsd_draft

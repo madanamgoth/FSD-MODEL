@@ -1,0 +1,23 @@
+# --- Generated / large data (never push to GitLab) ---
+data/index/
+data/output/
+data/normalized/
+data/app.db
+*.db
+data/fsds/FSD/FSD-BASE/
+data/fsds/FSD/FSD-WORD-DOCUMENT/
+*.docx
+*.pdf
+
+# Keep PATTERNS/*.md and .gitkeep files
+
+# --- Python / local env ---
+__pycache__/
+*.pyc
+.venv/
+venv/
+.env
+*.egg-info/
+.pytest_cache/
+.huggingface/
+*.log

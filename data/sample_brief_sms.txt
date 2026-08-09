@@ -1,0 +1,31 @@
+Feature name: SMS OTP Integration
+
+Actors:
+- Mobile App
+- Auth / Login Service
+- Notification API
+- External SMS Gateway
+
+Happy path:
+1. User requests login OTP.
+2. Auth Service asks Notification API to send SMS using template SMS_OTP_LOGIN.
+3. Notification API persists the request, then submits to SMS Gateway.
+4. Gateway accepts and later sends delivery receipt callback.
+5. Auth Service allows OTP verification within 5 minutes.
+
+Rules:
+- OTP is 6 digits, single use, expires in 5 minutes.
+- Max 3 OTP sends per user per hour.
+- Do not log raw OTP in application logs.
+- Retry SMS submit twice on HTTP 429/5xx with exponential backoff.
+- On permanent failure, return error OTP_SEND_FAILED to App.
+
+APIs / events needed:
+- POST /api/v1/auth/otp/send
+- POST /api/v1/auth/otp/verify
+- POST /api/v1/notifications (internal)
+- Callback: POST /api/v1/notifications/callbacks/sms
+
+Out of scope:
+- Voice OTP
+- WhatsApp channel
