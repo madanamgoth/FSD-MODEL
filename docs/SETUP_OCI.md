@@ -206,10 +206,15 @@ Retry only failed rows:
 python src/normalize.py --retry-failed
 ```
 
-Force one file again:
+Force one file again (background; quote paths with spaces):
 
 ```bash
-python src/normalize.py --file /mmoneyhome/mobiquity/fsd-data/fsds/FSD/FSD-BASE/foo.docx --force
+nohup python -u src/normalize.py --file "/mmoneyhome/mobiquity/fsd-data/fsds/FSD/FSD-WORD-DOCUMENT/Comviva_mobiquity_Setaragan Integration_FSD_EAP-19675_V1.1 (signed off).docx" \
+  > /mmoneyhome/mobiquity/fsd-data/normalize.log 2>&1 &
+echo $!
+
+nohup python -u src/normalize.py --force --file /mmoneyhome/mobiquity/fsd-data/fsds/FSD/FSD-BASE/foo.docx \
+  > /mmoneyhome/mobiquity/fsd-data/normalize.log 2>&1 &
 ```
 
 **Why:** X (`qwen2.5:7b`) rewrites messy Word into one Markdown template under `fsd-data/normalized/`.  
@@ -263,37 +268,111 @@ Do this **after** some/all normalize, not on raw Word. Same filename in differen
 
 ## 9) Model Y — generate one new FSD
 
+Do **not** run generate while normalize/ingest is still using Ollama.
+
 ```bash
 source /mmoneyhome/mobiquity/fsd-model/scripts/env.sh
-python src/generate.py --brief-file data/sample_brief_sms.txt --out sms_otp_fsd.md
+ps aux | grep -E '[n]ormalize.py|[i]ngest.py|[g]enerate.py'
+python src/status.py
+```
+
+Foreground (short test):
+
+```bash
+python src/generate.py --brief-file data/sample_brief_sms.txt --out sms_otp_test.md
+python src/generate.py --brief "Feature: SMS OTP. Actors: App, Auth, Notification API, SMS Gateway. OTP 6 digits, 5 min." --out quick_test.md
+```
+
+Background (survives closing SSH; 7B ≈ 10–30 min, 1.5B ≈ 2–10 min):
+
+```bash
+source /mmoneyhome/mobiquity/fsd-model/scripts/env.sh
+
+nohup python -u src/generate.py \
+  --brief-file data/sample_brief_sms.txt \
+  --out sms_otp_test.md \
+  > /mmoneyhome/mobiquity/fsd-data/generate.log 2>&1 &
+echo $!
+tail -f /mmoneyhome/mobiquity/fsd-data/generate.log
+# Ctrl+C stops tail only, not the job
+```
+
+Your own brief file (iteration 2 — use a **new** `--out` name):
+
+```bash
+# write /mmoneyhome/mobiquity/fsd-data/brief_sms_otp_v2.txt  (richer facts)
+nohup python -u src/generate.py \
+  --brief-file /mmoneyhome/mobiquity/fsd-data/brief_sms_otp_v2.txt \
+  --out sms_otp_test_v2.md \
+  > /mmoneyhome/mobiquity/fsd-data/generate.log 2>&1 &
+echo $!
+tail -f /mmoneyhome/mobiquity/fsd-data/generate.log
+```
+
+```bash
 ls -la /mmoneyhome/mobiquity/fsd-data/output/
 python src/status.py --generated
 ```
 
-Or your own brief:
+Log should show `Chunks in index: …` and retrieved sources (after approve, look for `fsd_sms_otp.md`).
 
-```bash
-python src/generate.py --brief "Feature: SMS OTP. Actors: App, Auth, Notification API, SMS Gateway. ..." --out my_fsd.md
-```
-
-**Why:** Y (`qwen2.5:1.5b`) searches the index and writes a draft Markdown FSD. ~2–10 minutes per doc.  
-The new filename is inserted into SQLite (`generate_jobs` + `documents`) with `status=draft`, `available_to_x=0`, `available_to_y=0` until you approve.
+**Why:** Y (`ollama.model`, often `qwen2.5:7b`) searches Chroma and writes a draft. SQLite `generate_jobs` + `documents` get `status=draft`, `available_to_x=0`, `available_to_y=0` until you approve.
 
 ---
 
 ## 10) Make a good draft available to X and Y (approve)
 
+Foreground:
+
 ```bash
-python src/approve.py --file /mmoneyhome/mobiquity/fsd-data/output/sms_otp_fsd.md --name fsd_sms_otp.md --notes "good SMS pattern"
+python src/approve.py \
+  --file /mmoneyhome/mobiquity/fsd-data/output/sms_otp_test.md \
+  --name fsd_sms_otp.md \
+  --notes "good SMS pattern"
 python src/status.py --generated
 ```
 
-**Why:** copies the draft into `normalized/APPROVED`, sets `available_to_x=1 available_to_y=1`, re-indexes. Next generate can retrieve it. X can see it as a clean pattern too.
+Background (re-embeds into Chroma; a few minutes):
+
+```bash
+source /mmoneyhome/mobiquity/fsd-model/scripts/env.sh
+ps aux | grep -E '[n]ormalize.py|[i]ngest.py|[g]enerate.py|[a]pprove.py'
+
+nohup python -u src/approve.py \
+  --file /mmoneyhome/mobiquity/fsd-data/output/sms_otp_test.md \
+  --name fsd_sms_otp.md \
+  --notes "good SMS pattern" \
+  > /mmoneyhome/mobiquity/fsd-data/approve.log 2>&1 &
+echo $!
+tail -f /mmoneyhome/mobiquity/fsd-data/approve.log
+```
+
+Done when you see `Indexed … chunk(s)` and `available_to_x=1 available_to_y=1`.  
+Example: 749 chunks + 16 approved = **765**.
+
+```bash
+ls /mmoneyhome/mobiquity/fsd-data/normalized/APPROVED/
+python src/status.py --generated
+```
+
+Iteration 2 (new name, do not overwrite unless you intend to):
+
+```bash
+nohup python -u src/approve.py \
+  --file /mmoneyhome/mobiquity/fsd-data/output/sms_otp_test_v2.md \
+  --name fsd_sms_otp_v2.md \
+  --notes "richer brief iteration 2" \
+  > /mmoneyhome/mobiquity/fsd-data/approve.log 2>&1 &
+```
+
+**Why:** copies the draft into `normalized/APPROVED`, sets `available_to_x=1 available_to_y=1`, re-indexes. Next generate can retrieve it.
 
 Bad draft (do **not** feed to X/Y):
 
 ```bash
-python src/approve.py --file /mmoneyhome/mobiquity/fsd-data/output/sms_otp_fsd.md --reject --notes "wrong actors"
+python src/approve.py \
+  --file /mmoneyhome/mobiquity/fsd-data/output/sms_otp_test.md \
+  --reject --notes "wrong actors"
 ```
 
 ---
@@ -309,6 +388,16 @@ python src/ingest.py --delete /mmoneyhome/mobiquity/fsd-data/normalized/FSD-BASE
 python src/status.py
 ```
 
+Background:
+
+```bash
+nohup python -u src/unlearn.py \
+  --file /mmoneyhome/mobiquity/fsd-data/normalized/APPROVED/fsd_sms_otp.md \
+  --notes "outdated" \
+  > /mmoneyhome/mobiquity/fsd-data/unlearn.log 2>&1 &
+echo $!
+```
+
 **Why:** `status=unlearned`, `available_to_x=0`, `available_to_y=0`, vectors removed.  
 `normalize.py` / `ingest.py` skip that file unless you `--force`.
 
@@ -318,10 +407,52 @@ python src/status.py
 
 ```bash
 source /mmoneyhome/mobiquity/fsd-model/scripts/env.sh
-python src/generate.py --brief "..." --out new_fsd.md
+ps aux | grep -E '[n]ormalize.py|[i]ngest.py|[g]enerate.py'
+
+nohup python -u src/generate.py --brief-file /mmoneyhome/mobiquity/fsd-data/my_brief.txt --out new_fsd.md \
+  > /mmoneyhome/mobiquity/fsd-data/generate.log 2>&1 &
+echo $!
+tail -f /mmoneyhome/mobiquity/fsd-data/generate.log
+
 python src/status.py --generated
 # if good:
-python src/approve.py --file /mmoneyhome/mobiquity/fsd-data/output/new_fsd.md --name fsd_new.md
+nohup python -u src/approve.py --file /mmoneyhome/mobiquity/fsd-data/output/new_fsd.md --name fsd_new.md \
+  --notes "approved" > /mmoneyhome/mobiquity/fsd-data/approve.log 2>&1 &
+```
+
+---
+
+## Background cheat sheet (`nohup`)
+
+`source scripts/env.sh` once per SSH login. `-u` = live log. `Ctrl+C` on `tail` does **not** stop the job. Run **only one** of X / ingest / Y / approve at a time (shared Ollama).
+
+```bash
+source /mmoneyhome/mobiquity/fsd-model/scripts/env.sh
+
+# X — one file / all / named file
+nohup python -u src/normalize.py --limit 1 > /mmoneyhome/mobiquity/fsd-data/normalize.log 2>&1 &
+nohup python -u src/normalize.py > /mmoneyhome/mobiquity/fsd-data/normalize.log 2>&1 &
+nohup python -u src/normalize.py --file "/path/to/file.docx" > /mmoneyhome/mobiquity/fsd-data/normalize.log 2>&1 &
+echo $!; tail -f /mmoneyhome/mobiquity/fsd-data/normalize.log
+
+# ingest
+nohup python -u src/ingest.py > /mmoneyhome/mobiquity/fsd-data/ingest.log 2>&1 &
+nohup python -u src/ingest.py --rebuild > /mmoneyhome/mobiquity/fsd-data/ingest.log 2>&1 &
+echo $!; tail -f /mmoneyhome/mobiquity/fsd-data/ingest.log
+
+# Y
+nohup python -u src/generate.py --brief-file data/sample_brief_sms.txt --out sms_otp_test.md \
+  > /mmoneyhome/mobiquity/fsd-data/generate.log 2>&1 &
+echo $!; tail -f /mmoneyhome/mobiquity/fsd-data/generate.log
+
+# approve (index + available_to_x/y=1)
+nohup python -u src/approve.py --file /mmoneyhome/mobiquity/fsd-data/output/sms_otp_test.md \
+  --name fsd_sms_otp.md --notes "good SMS pattern" \
+  > /mmoneyhome/mobiquity/fsd-data/approve.log 2>&1 &
+echo $!; tail -f /mmoneyhome/mobiquity/fsd-data/approve.log
+
+# still running?
+ps aux | grep -E '[n]ormalize.py|[i]ngest.py|[g]enerate.py|[a]pprove.py'
 ```
 
 Only re-run X/ingest when you add a new DOCX (new path = new DB row) or `--force` an overwrite:
