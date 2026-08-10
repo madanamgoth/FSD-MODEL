@@ -6,7 +6,7 @@ Two-step local pipeline:
 2. **Ingest** those `.md` files into Chroma  
 3. **Model Y** (`qwen2.5:1.5b`) writes a new FSD from your brief + retrieved examples  
 
-Settings live in **`config.properties`**. Turn stages on/off with `normalize.enabled=Y/N` and `ingest.enabled=Y/N` (scripts still run manually; `N` = exit). GitLab = **code only**. Real `.docx` stay on disk.
+Settings live in **`config.properties`**. Turn stages on/off with `normalize.enabled=Y/N` and `ingest.enabled=Y/N` (scripts still run manually; `N` = exit). GitHub = **code only**. Real `.docx` stay on disk.
 
 SQLite keys files by **full path** (not short name). First run / empty DB = every file is NEW. Same name in two folders = two rows. Already `done` = skip.
 
@@ -65,8 +65,9 @@ python src/approve.py --file data/output/sms_otp_fsd.md --name fsd_sms_otp.md
 ## OCI
 
 ```bash
-git clone <GITLAB_URL> /mmoneyhome/mobiquity/fsd-model
-cd /mmoneyhome/mobiquity/fsd-model
+cd /mmoneyhome/mobiquity
+git clone https://github.com/madanamgoth/FSD-MODEL.git fsd-model
+cd fsd-model
 cp config.properties.example config.properties
 # scp DOCX → /mmoneyhome/mobiquity/fsd-data/fsds/FSD/
 
@@ -81,4 +82,4 @@ python src/generate.py --brief-file data/sample_brief_sms.txt --out sms_otp_fsd.
 python src/status.py --generated
 ```
 
-Later: `git pull` updates code only; `fsd-data` is untouched.
+Later: `git pull origin master` updates code only; `fsd-data` is untouched.

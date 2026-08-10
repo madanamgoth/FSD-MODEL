@@ -1,4 +1,4 @@
-# What to put in GitLab vs what stays on disk
+# What to put in GitHub vs what stays on disk
 
 ## Commit / push (code)
 
@@ -35,5 +35,6 @@ Windows:  C:\FSD MODEL\data\fsds\FSD\*.docx
     scp/rsync (not git)
 Server:   /mmoneyhome/mobiquity/fsd-data/fsds/FSD\
 
-GitLab:   code only → git clone → /mmoneyhome/mobiquity/fsd-model/
+GitHub:   https://github.com/madanamgoth/FSD-MODEL.git
+          code only → git clone → /mmoneyhome/mobiquity/fsd-model/
 ```

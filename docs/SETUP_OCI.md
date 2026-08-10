@@ -99,19 +99,19 @@ export FSD_DATA=/mmoneyhome/mobiquity/fsd-data
 mkdir -p "$FSD_DATA"/{fsds/FSD,normalized,index,output}
 
 cd /mmoneyhome/mobiquity
-git clone <YOUR_GITLAB_URL> fsd-model
+git clone https://github.com/madanamgoth/FSD-MODEL.git fsd-model
 cd fsd-model
 cp config.properties.example config.properties
 # edit flags if needed: normalize.enabled=Y   ingest.enabled=Y
 ```
 
-**Why:** GitLab = scripts only. See [WHAT_IN_GIT.md](WHAT_IN_GIT.md).  
+**Why:** GitHub = scripts only. See [WHAT_IN_GIT.md](WHAT_IN_GIT.md).  
 `config.properties.example` points at `/mmoneyhome/mobiquity/fsd-data/...` including `app.db`.
 
 Later code update:
 
 ```bash
-cd /mmoneyhome/mobiquity/fsd-model && git pull
+cd /mmoneyhome/mobiquity/fsd-model && git pull origin master
 ```
 
 This does **not** delete `fsd-data`.
