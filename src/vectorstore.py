@@ -12,6 +12,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import sqlite_compat  # noqa: F401  — must run before chromadb (old OCI sqlite)
+
 import chromadb
 from chromadb.config import Settings as ChromaSettings
 

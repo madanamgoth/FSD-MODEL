@@ -149,7 +149,19 @@ pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-**Why:** install Chroma, httpx, python-docx, pypdf into `.venv` on the big disk.
+**Why:** install Chroma, httpx, python-docx, pypdf into `.venv` on the big disk.  
+Oracle Linux sqlite is often &lt; 3.35 (Chroma needs ≥ 3.35). `requirements.txt` includes `pysqlite3-binary` on Linux so ingest works.
+
+If ingest already failed with `unsupported version of sqlite3`:
+
+```bash
+source /mmoneyhome/mobiquity/fsd-model/scripts/env.sh
+git pull origin master
+pip install "pysqlite3-binary>=0.5.0"
+python -c "import sys; sys.path.insert(0,'src'); import sqlite_compat; import sqlite3; print(sqlite3.sqlite_version)"
+```
+
+Expect a version ≥ 3.35, then rerun ingest.
 
 ---
 
@@ -157,20 +169,35 @@ pip install -r requirements.txt
 
 Set `normalize.enabled=Y` in `config.properties` (set `N` to disable this script).
 
+`-u` / `PYTHONUNBUFFERED=1` so log lines appear immediately (not after the buffer fills).  
+`nohup` + `&` keeps running after you close SSH.
+
 ```bash
 source /mmoneyhome/mobiquity/fsd-model/scripts/env.sh
+export PYTHONUNBUFFERED=1
 
 # test 1 file first (empty DB → file is NEW → insert + run)
-python src/normalize.py --limit 1
+nohup python -u src/normalize.py --limit 1 > /mmoneyhome/mobiquity/fsd-data/normalize.log 2>&1 &
+echo $!
+tail -f /mmoneyhome/mobiquity/fsd-data/normalize.log
+# Ctrl+C stops tail only, not the job
+
 python src/status.py
 
 # all ~117 docs (often 12–36 hours on CPU)
 # stop anytime; rerun skips status=done, skips status=unlearned
-nohup python src/normalize.py > /mmoneyhome/mobiquity/fsd-data/normalize.log 2>&1 &
+nohup python -u src/normalize.py > /mmoneyhome/mobiquity/fsd-data/normalize.log 2>&1 &
+echo $!
 tail -f /mmoneyhome/mobiquity/fsd-data/normalize.log
 
 python src/status.py
 python src/status.py --failed
+```
+
+Still running?
+
+```bash
+ps aux | grep '[n]ormalize.py'
 ```
 
 Retry only failed rows:
@@ -195,12 +222,38 @@ Y cannot use raw `.docx` well until this finishes.
 
 Set `ingest.enabled=Y` in `config.properties`. Incremental ingest skips `.md` already `ingest_jobs.status=done`.
 
+**Time (117 normalized FSDs, 4 vCPU CPU-only):** typically **20–60 minutes**; worst case ~90 minutes if many docs are huge. Do **not** run ingest while Model X is still using Ollama (both hit the same process).
+
+Foreground:
+
 ```bash
 source /mmoneyhome/mobiquity/fsd-model/scripts/env.sh
 python src/ingest.py                 # new/pending only (skips done + unlearned)
 python src/ingest.py --retry-failed
 python src/ingest.py --rebuild       # wipe Chroma, re-index all except unlearned
 python src/status.py
+```
+
+Background (survives closing SSH):
+
+```bash
+source /mmoneyhome/mobiquity/fsd-model/scripts/env.sh
+export PYTHONUNBUFFERED=1
+
+nohup python -u src/ingest.py > /mmoneyhome/mobiquity/fsd-data/ingest.log 2>&1 &
+echo $!
+tail -f /mmoneyhome/mobiquity/fsd-data/ingest.log
+# Ctrl+C stops tail only, not the job
+
+# full rebuild in background:
+nohup python -u src/ingest.py --rebuild > /mmoneyhome/mobiquity/fsd-data/ingest.log 2>&1 &
+echo $!
+```
+
+Still running?
+
+```bash
+ps aux | grep '[i]ngest.py'
 ```
 
 **Why:** turns X’s `.md` into vectors in `fsd-data/index/`. Incremental ~minutes for new files; full rebuild ~30–90 minutes.  
@@ -278,6 +331,7 @@ python src/normalize.py              # new paths only (skips done + unlearned)
 python src/normalize.py --retry-failed
 python src/ingest.py                 # new .md only (skips already indexed)
 python src/ingest.py --retry-failed
+# or background: nohup python -u src/ingest.py > /mmoneyhome/mobiquity/fsd-data/ingest.log 2>&1 &
 python src/ingest.py --rebuild       # optional full Chroma refresh
 python src/status.py
 ```
