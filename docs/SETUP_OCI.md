@@ -271,6 +271,8 @@ nohup python -u src/ingest.py --rebuild > /mmoneyhome/mobiquity/fsd-data/ingest.
 echo $!
 ```
 
+Chroma allows at most ~5461 rows per write. `vectorstore.upsert_chunks` saves in batches of 500, so large libraries (6k+ chunks) work for both `ingest.py` and `ingest.py --rebuild`.
+
 Retry / force one file:
 
 ```bash
