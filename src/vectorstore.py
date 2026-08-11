@@ -43,35 +43,49 @@ def get_collection(client: chromadb.PersistentClient | None = None):
     )
 
 
+# Chroma rejects a single upsert larger than ~5461 items; stay under that.
+_UPSERT_BATCH_SIZE = 500
+
+
 def upsert_chunks(chunks: list[DocumentChunk]) -> int:
     """
-    Insert or update chunks in Chroma.
+    Insert or update chunks in Chroma in batches (Chroma max ~5461 per call).
     Returns how many chunks were written.
     """
     if not chunks:
         return 0
 
     collection = get_collection()
-    ids = [c.chunk_id for c in chunks]
-    documents = [c.text for c in chunks]
-    metadatas = [
-        {
-            "source": c.source,
-            "section": c.section,
-            "category": c.category or "",
-        }
-        for c in chunks
-    ]
-    embeddings = embed_texts(documents)
+    total = len(chunks)
+    written = 0
+    batch_count = (total + _UPSERT_BATCH_SIZE - 1) // _UPSERT_BATCH_SIZE
 
-    # Chroma upsert = insert if new, replace if same id already exists
-    collection.upsert(
-        ids=ids,
-        documents=documents,
-        metadatas=metadatas,
-        embeddings=embeddings,
-    )
-    return len(chunks)
+    for batch_i, start in enumerate(range(0, total, _UPSERT_BATCH_SIZE), start=1):
+        batch = chunks[start : start + _UPSERT_BATCH_SIZE]
+        ids = [c.chunk_id for c in batch]
+        documents = [c.text for c in batch]
+        metadatas = [
+            {
+                "source": c.source,
+                "section": c.section,
+                "category": c.category or "",
+            }
+            for c in batch
+        ]
+        embeddings = embed_texts(documents)
+        collection.upsert(
+            ids=ids,
+            documents=documents,
+            metadatas=metadatas,
+            embeddings=embeddings,
+        )
+        written += len(batch)
+        print(
+            f"[vectorstore] Upserted batch {batch_i}/{batch_count} "
+            f"({written}/{total} chunks)"
+        )
+
+    return written
 
 
 def delete_by_source(source: str) -> int:
