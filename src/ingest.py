@@ -3,14 +3,19 @@ ingest.py
 ---------
 INDEX entry point for Model Y.
 
-Reads **normalized Markdown** (Model X output) from ingest.dir,
-chunks + embeds, writes Chroma under index.dir.
+Reads files from ingest.dir (config.properties), chunks + embeds,
+writes Chroma under index.dir.
 
-Do NOT point this at raw .docx after Model X exists.
-Run normalize.py first.
+ingest.dir can be:
+  - raw FSD library (.docx) when normalize.enabled=N  (skip Model X)
+  - normalized/ (.md) when Model X has run
+
+Checks SQLite ingest_jobs only (not normalize_jobs). No X row required.
+No row = NEW → index. status=done → skip unless --force / --rebuild.
 
 Examples:
   python src/ingest.py
+  python src/ingest.py --file /path/to/one.docx
   python src/ingest.py --retry-failed
   python src/ingest.py --rebuild
   python src/ingest.py --file data/normalized/FSD-BASE/foo.md --force
@@ -118,8 +123,17 @@ def ingest_files(
         print(f"[ingest] Upsert complete. Chunks written: {written}")
 
     for path, chunks in per_file:
+        suffix = path.suffix.lower()
+        if "APPROVED" in path.parts:
+            kind = "approved"
+        elif "PATTERNS" in path.parts:
+            kind = "pattern"
+        elif suffix in {".docx", ".pdf", ".doc"}:
+            kind = "source"
+        else:
+            kind = "normalized"
         doc_id = upsert_document(
-            kind="normalized" if "APPROVED" not in path.parts else "approved",
+            kind=kind,
             abs_path=path,
             filename=path.name,
             category=chunks[0].category if chunks else "",

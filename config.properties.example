@@ -6,7 +6,8 @@
 
 fsd.dir=/mmoneyhome/mobiquity/fsd-data/fsds/FSD
 normalized.dir=/mmoneyhome/mobiquity/fsd-data/normalized
-ingest.dir=/mmoneyhome/mobiquity/fsd-data/normalized
+# Skip Model X: index raw .docx. After X: set to .../normalized
+ingest.dir=/mmoneyhome/mobiquity/fsd-data/fsds/FSD
 fsd.exclude.dirs=
 
 index.dir=/mmoneyhome/mobiquity/fsd-data/index
@@ -14,7 +15,7 @@ output.dir=/mmoneyhome/mobiquity/fsd-data/output
 app.db=/mmoneyhome/mobiquity/fsd-data/app.db
 
 # Stage switches (Y/N). Scripts still run manually; N = exit immediately.
-normalize.enabled=Y
+normalize.enabled=N
 ingest.enabled=Y
 
 embedding.model=nomic-embed-text

@@ -8,13 +8,15 @@ Use `/mmoneyhome` (big disk). Do **not** fill `/` (30 GB root).
                          SQLite app.db tracks every file + status (incl. unlearn)
 ```
 
-| | Folder | Format |
-|--|--------|--------|
-| **X in** | `/mmoneyhome/mobiquity/fsd-data/fsds/FSD/` | `.docx` (copy, not git) |
-| **X out** | `/mmoneyhome/mobiquity/fsd-data/normalized/` | `.md` |
-| **Y in** | `normalized/` via `index/` + your brief | `.md` / text |
-| **Y out** | `/mmoneyhome/mobiquity/fsd-data/output/` | `.md` draft |
-| **Tracker** | `/mmoneyhome/mobiquity/fsd-data/app.db` | SQLite (not git) |
+
+|             | Folder                                       | Format                  |
+| ----------- | -------------------------------------------- | ----------------------- |
+| **X in**    | `/mmoneyhome/mobiquity/fsd-data/fsds/FSD/`   | `.docx` (copy, not git) |
+| **X out**   | `/mmoneyhome/mobiquity/fsd-data/normalized/` | `.md`                   |
+| **Y in**    | `normalized/` via `index/` + your brief      | `.md` / text            |
+| **Y out**   | `/mmoneyhome/mobiquity/fsd-data/output/`     | `.md` draft             |
+| **Tracker** | `/mmoneyhome/mobiquity/fsd-data/app.db`      | SQLite (not git)        |
+
 
 Code (git): `/mmoneyhome/mobiquity/fsd-model/`  
 Data (not git): `/mmoneyhome/mobiquity/fsd-data/`
@@ -24,13 +26,15 @@ Statuses: `pending | running | done | failed | skipped | indexed | draft | appro
 Stage switches in `config.properties` (you still run scripts manually):
 
 ```properties
-normalize.enabled=Y
+normalize.enabled=N
 ingest.enabled=Y
 ```
 
 `N` → that script prints and exits (no Ollama). Generate is not gated by these flags.
 
-SQLite keys each file by **full absolute path**, not the short filename. Empty `app.db` = first run; every file on disk is NEW (insert row → process). Same name in two folders = two rows. Same path already `done` = skip (`--force` to redo).
+**Current default:** skip Model X — `ingest.dir` points at raw `fsds/FSD` so ingest indexes `.docx` directly. To use X again later: `normalize.enabled=Y` and `ingest.dir=.../normalized`.
+
+SQLite keys each file by **full absolute path**, not the short filename. Empty `app.db` = first run; every file on disk is NEW (insert row → process). Same name in two folders = two rows. Same path already `done` = skip (`--force` to redo). Ingest does **not** require a `normalize_jobs` row.
 
 ---
 
@@ -150,7 +154,7 @@ pip install -r requirements.txt
 ```
 
 **Why:** install Chroma, httpx, python-docx, pypdf into `.venv` on the big disk.  
-Oracle Linux sqlite is often &lt; 3.35 (Chroma needs ≥ 3.35). `requirements.txt` includes `pysqlite3-binary` on Linux so ingest works.
+Oracle Linux sqlite is often < 3.35 (Chroma needs ≥ 3.35). `requirements.txt` includes `pysqlite3-binary` on Linux so ingest works.
 
 If ingest already failed with `unsupported version of sqlite3`:
 
@@ -225,44 +229,73 @@ Y cannot use raw `.docx` well until this finishes.
 
 ## 8) Ingest — build search index
 
-Set `ingest.enabled=Y` in `config.properties`. Incremental ingest skips `.md` already `ingest_jobs.status=done`.
+Set `ingest.enabled=Y` in `config.properties`.
 
-**Time (117 normalized FSDs, 4 vCPU CPU-only):** typically **20–60 minutes**; worst case ~90 minutes if many docs are huge. Do **not** run ingest while Model X is still using Ollama (both hit the same process).
+### Skip Model X (current strategy) — index `.docx` directly
 
-Foreground:
+Normalize code stays in the repo; turn it off and point ingest at the raw library:
 
-```bash
-source /mmoneyhome/mobiquity/fsd-model/scripts/env.sh
-python src/ingest.py                 # new/pending only (skips done + unlearned)
-python src/ingest.py --retry-failed
-python src/ingest.py --rebuild       # wipe Chroma, re-index all except unlearned
-python src/status.py
+```properties
+normalize.enabled=N
+ingest.dir=/mmoneyhome/mobiquity/fsd-data/fsds/FSD
 ```
 
-Background (survives closing SSH):
+Ingest checks **SQLite `ingest_jobs` only** (full path). No `normalize_jobs` row required. No row = NEW → index. `done` = skip.
+
+**Time (~117 `.docx`, 4 vCPU):** often **30–90 minutes** (extract + embed). Do **not** run ingest while normalize/generate is using Ollama.
+
+One file (same pattern as normalize `--file`; quote paths with spaces):
 
 ```bash
 source /mmoneyhome/mobiquity/fsd-model/scripts/env.sh
-export PYTHONUNBUFFERED=1
 
-nohup python -u src/ingest.py > /mmoneyhome/mobiquity/fsd-data/ingest.log 2>&1 &
+nohup python -u src/ingest.py --file "/mmoneyhome/mobiquity/fsd-data/fsds/FSD/FSD-WORD-DOCUMENT/Comviva_mobiquity_Setaragan Integration_FSD_EAP-19675_V1.1 (signed off).docx" \
+  > /mmoneyhome/mobiquity/fsd-data/ingest.log 2>&1 &
 echo $!
 tail -f /mmoneyhome/mobiquity/fsd-data/ingest.log
 # Ctrl+C stops tail only, not the job
+```
 
-# full rebuild in background:
+All pending under `ingest.dir`:
+
+```bash
+nohup python -u src/ingest.py > /mmoneyhome/mobiquity/fsd-data/ingest.log 2>&1 &
+echo $!
+tail -f /mmoneyhome/mobiquity/fsd-data/ingest.log
+```
+
+Wipe old Chroma (e.g. previous normalized `.md` chunks) and re-index everything from `ingest.dir`:
+
+```bash
 nohup python -u src/ingest.py --rebuild > /mmoneyhome/mobiquity/fsd-data/ingest.log 2>&1 &
 echo $!
+```
+
+Retry / force one file:
+
+```bash
+python src/ingest.py --retry-failed
+nohup python -u src/ingest.py --force --file "/path/to/one.docx" \
+  > /mmoneyhome/mobiquity/fsd-data/ingest.log 2>&1 &
 ```
 
 Still running?
 
 ```bash
 ps aux | grep '[i]ngest.py'
+python src/status.py
 ```
 
-**Why:** turns X’s `.md` into vectors in `fsd-data/index/`. Incremental ~minutes for new files; full rebuild ~30–90 minutes.  
-Do this **after** some/all normalize, not on raw Word. Same filename in different folders = two rows (full path is the key).
+### After Model X again
+
+```properties
+normalize.enabled=Y
+ingest.dir=/mmoneyhome/mobiquity/fsd-data/normalized
+```
+
+Then run normalize, then ingest as before (indexes `.md`).
+
+**Why:** turns files under `ingest.dir` into vectors in `fsd-data/index/`. Same filename in different folders = two rows (full path is the key).
 
 ---
 
@@ -435,7 +468,9 @@ nohup python -u src/normalize.py > /mmoneyhome/mobiquity/fsd-data/normalize.log 
 nohup python -u src/normalize.py --file "/path/to/file.docx" > /mmoneyhome/mobiquity/fsd-data/normalize.log 2>&1 &
 echo $!; tail -f /mmoneyhome/mobiquity/fsd-data/normalize.log
 
-# ingest
+# ingest (with normalize.enabled=N + ingest.dir=.../fsds/FSD → indexes .docx)
+nohup python -u src/ingest.py --file "/mmoneyhome/mobiquity/fsd-data/fsds/FSD/FSD-WORD-DOCUMENT/Comviva_mobiquity_Setaragan Integration_FSD_EAP-19675_V1.1 (signed off).docx" \
+  > /mmoneyhome/mobiquity/fsd-data/ingest.log 2>&1 &
 nohup python -u src/ingest.py > /mmoneyhome/mobiquity/fsd-data/ingest.log 2>&1 &
 nohup python -u src/ingest.py --rebuild > /mmoneyhome/mobiquity/fsd-data/ingest.log 2>&1 &
 echo $!; tail -f /mmoneyhome/mobiquity/fsd-data/ingest.log
@@ -474,3 +509,4 @@ sqlite3 /mmoneyhome/mobiquity/fsd-data/app.db ".tables"
 sqlite3 /mmoneyhome/mobiquity/fsd-data/app.db "SELECT id, kind, filename, status, available_to_x, available_to_y FROM documents ORDER BY id DESC LIMIT 20;"
 sqlite3 /mmoneyhome/mobiquity/fsd-data/app.db "SELECT id, output_name, status, available_to_x, available_to_y FROM generate_jobs ORDER BY id DESC LIMIT 10;"
 ```
+
